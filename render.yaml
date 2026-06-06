@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: inventario
+    env: node
+    region: oregon
+    branch: main
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    

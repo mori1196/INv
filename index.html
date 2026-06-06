@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whisker Delights</title>
+    <link rel="stylesheet" href="css.css">
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="nav-container">
+        <div class="logo">🐾 Whisker Delights</div>
+        <button onclick="abrirAdmin()" class="btn-admin">⚙️ Admin</button>
+    </div>
+</nav>
+
+<!-- MODAL DE ADMIN -->
+<div id="modalAdmin" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="cerrarAdmin()">&times;</span>
+        <h2>Panel de Administración</h2>
+        
+        <div id="loginAdmin">
+            <form onsubmit="loginAdmin(event)">
+                <div class="form-group">
+                    <label>Usuario:</label>
+                    <input type="text" id="adminUsuario" placeholder="Usuario" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Contraseña:</label>
+                    <input type="password" id="adminPass" placeholder="Contraseña" required>
+                </div>
+                
+                <button type="submit" class="btn-registrar">Ingresar</button>
+            </form>
+        </div>
+
+        <div id="panelAdmin" style="display:none;">
+            <div class="admin-tabs">
+                <button onclick="mostrarTabAdmin('ventas', event)" class="tab-btn active">📊 Ventas</button>
+                <button onclick="mostrarTabAdmin('inventario', event)" class="tab-btn">📦 Inventario</button>
+                <button onclick="mostrarTabAdmin('estadisticas', event)" class="tab-btn">📈 Estadísticas</button>
+                <button onclick="cerrarSesionAdmin()" class="tab-btn btn-logout">🚪 Salir</button>
+            </div>
+
+            <div id="ventas-tab" class="admin-tab">
+                <h3>Historial de Ventas</h3>
+                <div id="ventasLista" style="max-height: 400px; overflow-y: auto;"></div>
+            </div>
+
+            <div id="inventario-tab" class="admin-tab" style="display:none;">
+                <h3>Inventario de Productos</h3>
+                <div id="inventarioLista" style="max-height: 400px; overflow-y: auto;"></div>
+            </div>
+
+            <div id="estadisticas-tab" class="admin-tab" style="display:none;">
+                <h3>Estadísticas de Ventas</h3>
+                <div id="estadisticasInfo"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PRODUCTOS -->
+<section id="productos" class="productos-section">
+    <div class="container">
+        <h2 class="section-title">Productos</h2>
+        <div class="productos-grid" id="productosGrid">
+            <p>Cargando productos...</p>
+        </div>
+    </div>
+</section>
+
+<!-- CARRITO -->
+<section style="padding: 2rem;">
+    <div class="container">
+        <div id="carrito"></div>
+    </div>
+</section>
+
+<!-- SCRIPT -->
+<script>
+const API = (window.location.origin && window.location.origin !== 'null')
+    ? window.location.origin
+    : 'https://inventario-e40f.onrender.com';
+
+// Si se abre el HTML desde un archivo local o desde localhost, este
+// fallback asegura que las peticiones apunten al dominio público.
+const PUBLIC_API = API.includes('localhost') ? 'https://inventario-e40f.onrender.com' : API;
+let adminToken = null;
+
+// ADMIN FUNCTIONS
+function abrirAdmin() {
+    document.getElementById("modalAdmin").style.display = "block";
+    if (adminToken) {
+        mostrarPanelAdmin();
+    }
+}
+
+function cerrarAdmin() {
+    document.getElementById("modalAdmin").style.display = "none";
+}
+
+function loginAdmin(event) {
+    event.preventDefault();
+    const usuario = document.getElementById("adminUsuario").value;
+    const contraseña = document.getElementById("adminPass").value;
+
+    fetch(`${PUBLIC_API}/admin/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usuario, contraseña })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) {
+            alert("❌ " + data.error);
+        } else {
+            adminToken = data.token;
+            alert("✅ Bienvenido Administrador");
+            mostrarPanelAdmin();
+        }
+    })
+    .catch(err => console.error('Error login:', err));
+}
+
+function mostrarPanelAdmin() {
+    document.getElementById("loginAdmin").style.display = "none";
+    document.getElementById("panelAdmin").style.display = "block";
+    cargarVentas();
+}
+
+function cerrarSesionAdmin() {
+    adminToken = null;
+    document.getElementById("loginAdmin").style.display = "block";
+    document.getElementById("panelAdmin").style.display = "none";
+    document.getElementById("adminUsuario").value = "";
+    document.getElementById("adminPass").value = "";
+    cerrarAdmin();
+}
+
+function mostrarTabAdmin(tab, event) {
+    document.getElementById("ventas-tab").style.display = "none";
+    document.getElementById("inventario-tab").style.display = "none";
+    document.getElementById("estadisticas-tab").style.display = "none";
+    document.getElementById(tab + "-tab").style.display = "block";
+
+    document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
+    if (event && event.target) {
+        event.target.classList.add("active");
+    }
+
+    if (tab === "ventas") cargarVentas();
+    else if (tab === "inventario") cargarInventario();
+    else if (tab === "estadisticas") cargarEstadisticas();
+}
+
+function cargarVentas() {
+    if (!adminToken) return;
+    fetch(`${PUBLIC_API}/admin/ventas`, {
+        headers: { "Authorization": adminToken }
+    })
+    .then(res => res.json())
+    .then(ventas => {
+        let html = "";
+        if (!ventas || ventas.length === 0) {
+            html = "<p>No hay ventas registradas</p>";
+        } else {
+            ventas.forEach(v => {
+                html += `<div class="compra-item">
+                    <p><strong>Venta #${v.id}</strong> - ${new Date(v.fecha_compra).toLocaleDateString('es-ES')}</p>
+                    <p>Productos: ${v.productos || 'N/A'}</p>
+                    <p>Ítems: ${v.total_items}</p>
+                    <p>Total: Q${parseFloat(v.total).toFixed(2)}</p>
+                </div>`;
+            });
+        }
+        document.getElementById("ventasLista").innerHTML = html;
+    })
+    .catch(err => console.error('Error cargarVentas:', err));
+}
+function normalizeName(nombre) {
+    return nombre.toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+}
+
+function cargarProductos() {
+    const imagenes = {
+        'salmon premium': 'https://thfvnext.bing.com/th/id/OIP.MlkMH9CWnSJuRMIquItQqwHaHa?o=7&cb=thfvnextfalconrm=3&rs=1&pid=ImgDetMain&o=7&rm=3',
+        'snacks pollo': 'https://www.superpet.pe/on/demandware.static/-/Sites-SuperPet-master-catalog/default/dw21de95c7/images/sandwich-de-pollo-x80gr.jpg',
+        'alimento light': 'https://th.bing.com/th/id/R.0f6c02e37ab9bf530bcbc7f786596030?rik=EFkcmac3zrMaRg&riu=http%3a%2f%2fpetcol.co%2fcdn%2fshop%2fproducts%2fPRODUCTO_7d7b5a6f-aeab-4a4d-8d89-a27e2ad4c744_1200x1200.png%3fv%3d1570406940&ehk=VpppSHUzbCqIJQePysCuVVvmLtPwpU9V0C4VvWvoKlw%3d&risl=&pid=ImgRaw&r=0',
+    };
+
+    fetch(`${PUBLIC_API}/alimentos`)
+    .then(res => res.json())
+    .then(productos => {
+        const grid = document.getElementById('productosGrid');
+        if (!productos || productos.length === 0) {
+            grid.innerHTML = '<p>No hay productos disponibles en este momento.</p>';
+            return;
+        }
+
+        let html = '';
+        productos.forEach(producto => {
+            const img = imagenes[normalizeName(producto.nombre)];
+            let imgHtml = '';
+
+            if (img) {
+                imgHtml = `<div style="width:100%;height:220px;background:#f0f0f0;border-radius:8px;margin-bottom:10px;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+                    <img src="${img}" alt="${producto.nombre}" style="width:100%;height:100%;object-fit:contain;padding:10px;">
+                </div>`;
+            } else {
+                imgHtml = `<div style="width:100%;height:220px;background:#999;border-radius:8px;margin-bottom:10px;display:flex;align-items:center;justify-content:center;font-size:100px;">🍖</div>`;
+            }
+            
+            html += `<div class="producto-card">
+                ${imgHtml}
+                <div style="padding: 1.5rem; flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
+                    <div>
+                        <h3 style="margin: 0 0 0.5rem 0;">${producto.nombre}</h3>
+                        <p style="font-size:1.2em;color:#667eea;font-weight:bold;margin:0.5rem 0;">Q${parseFloat(producto.precio).toFixed(2)}</p>
+                    </div>
+                    <button data-id="${producto.id}" data-nombre="${producto.nombre}" data-precio="${parseFloat(producto.precio)}" style="background:#667eea;color:white;border:none;padding:0.7rem 1.5rem;border-radius:5px;cursor:pointer;width:100%;font-weight:bold;margin-top:auto;">Agregar al carrito</button>
+                </div>
+            </div>`;
+        });
+
+        grid.innerHTML = html;
+        grid.querySelectorAll('button').forEach(button => {
+            button.addEventListener('click', () => {
+                agregarCarrito(button.dataset.id, button.dataset.nombre, parseFloat(button.dataset.precio));
+            });
+        });
+    })
+    .catch(err => {
+        console.error('Error cargarProductos:', err);
+        document.getElementById('productosGrid').innerHTML = '<p style="color:red;">Error al cargar productos.</p>';
+    });
+}
+function cargarInventario() {
+    if (!adminToken) return;
+    fetch(`${PUBLIC_API}/admin/inventario`, {
+        headers: { "Authorization": adminToken }
+    })
+    .then(res => res.json())
+    .then(productos => {
+        let html = "<table style='width:100%; border-collapse:collapse;'>";
+        html += "<tr style='background:#667eea;color:white;'><th style='padding:10px;'>Producto</th><th style='padding:10px;'>Precio</th><th style='padding:10px;'>Stock</th><th style='padding:10px;'>Acciones</th></tr>";
+        
+        if (productos && productos.length > 0) {
+            productos.forEach(p => {
+                const stockColor = p.stock < 10 ? '#ff6b6b' : '#4CAF50';
+                html += `<tr style='border-bottom:1px solid #ddd;'>
+                    <td style='padding:8px;'><input id='nombre-${p.id}' value='${p.nombre}' style='width:100%;border:1px solid #ccc;border-radius:4px;padding:6px;' /></td>
+                    <td style='padding:8px;'><input id='precio-${p.id}' type='number' step='0.01' value='${parseFloat(p.precio).toFixed(2)}' style='width:100%;border:1px solid #ccc;border-radius:4px;padding:6px;' /></td>
+                    <td style='padding:8px; background:${stockColor}; color:white; font-weight:bold;'><input id='stock-${p.id}' type='number' min='0' value='${p.stock}' style='width:100%;border:1px solid #ccc;border-radius:4px;padding:6px;' /></td>
+                    <td style='padding:8px;'><button onclick='actualizarProducto(${p.id})' style='background:#34d399;color:white;border:none;padding:8px 12px;border-radius:5px;cursor:pointer;'>Guardar</button></td>
+                </tr>`;
+            });
+        } else {
+            html += `<tr><td colspan='4' style='padding:16px;text-align:center;'>No hay productos en el inventario.</td></tr>`;
+        }
+        html += "</table>";
+        document.getElementById("inventarioLista").innerHTML = html;
+    })
+    .catch(err => console.error('Error cargarInventario:', err));
+}
+
+function actualizarProducto(id) {
+    const nombre = document.getElementById(`nombre-${id}`).value.trim();
+    const precio = parseFloat(document.getElementById(`precio-${id}`).value);
+    const stock = parseInt(document.getElementById(`stock-${id}`).value, 10);
+
+    if (!nombre || isNaN(precio) || precio < 0 || isNaN(stock) || stock < 0) {
+        alert('Por favor ingresa nombre, precio y stock válidos.');
+        return;
+    }
+
+    fetch(`${PUBLIC_API}/admin/alimento/${id}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': adminToken
+        },
+        body: JSON.stringify({ nombre, precio, stock })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) {
+            alert('❌ ' + data.error);
+            return;
+        }
+        alert('✅ Inventario actualizado correctamente');
+        cargarInventario();
+    })
+    .catch(err => {
+        console.error('Error actualizarProducto:', err);
+        alert('❌ Error al actualizar producto');
+    });
+}
+
+function cargarEstadisticas() {
+    if (!adminToken) return;
+    fetch(`${PUBLIC_API}/admin/estadisticas`, {
+        headers: { "Authorization": adminToken }
+    })
+    .then(res => res.json())
+    .then(stats => {
+        let html = `<div class="stat-box">
+            <p><strong>Total de Compras:</strong> ${stats.total_compras || 0}</p>
+            <p><strong>Ingresos Totales:</strong> Q${parseFloat(stats.ingresos_totales || 0).toFixed(2)}</p>
+            <p><strong>Promedio por Compra:</strong> Q${parseFloat(stats.promedio_compra || 0).toFixed(2)}</p>
+            <p><strong>Total de Productos:</strong> ${stats.total_productos || 0}</p>
+        </div>`;
+        document.getElementById("estadisticasInfo").innerHTML = html;
+    })
+    .catch(err => console.error('Error cargarEstadisticas:', err));
+}
+
+// CARRITO FUNCTIONS
+function agregarCarrito(id, nombre, precio) {
+    console.log('Agregando:', id, nombre, precio);
+    fetch(`${PUBLIC_API}/carrito`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, nombre, precio })
+    })
+    .then(res => res.json())
+    .then(data => {
+        console.log('Respuesta servidor:', data);
+        cargarCarrito();
+        alert("✅ Agregado al carrito");
+    })
+    .catch(err => {
+        console.error('Error agregar carrito:', err);
+        alert("❌ Error al agregar al carrito");
+    });
+}
+
+function cargarCarrito() {
+    console.log('Cargando carrito...');
+    fetch(`${PUBLIC_API}/carrito`)
+    .then(res => res.json())
+    .then(data => {
+        console.log('Datos carrito:', data);
+        let html = "<h3>🛒 Carrito</h3>";
+        let total = 0;
+
+        if (!data || data.length === 0) {
+            html += "<p>Tu carrito está vacío</p>";
+            document.getElementById("carrito").innerHTML = html;
+            return;
+        }
+
+        data.forEach((p, index) => {
+            html += `<div style="padding:10px;background:#f8f9fa;margin:5px 0;border-radius:5px;">
+                <p><strong>${p.nombre}</strong> - Q${p.precio}</p>
+                <button onclick="eliminarDelCarrito(${index})" style="background:#ff6b6b;color:white;border:none;padding:5px 10px;border-radius:3px;cursor:pointer;">Eliminar</button>
+            </div>`;
+            total += parseFloat(p.precio);
+        });
+
+        html += `<h4 style="margin-top:1rem;padding-top:1rem;border-top:2px solid #667eea;">Total: Q${total.toFixed(2)}</h4>`;
+        html += `<button onclick="finalizarCompra()" class="btn-registrar" style="margin-top:1rem;width:100%;">✓ Finalizar Compra</button>`;
+
+        document.getElementById("carrito").innerHTML = html;
+    })
+    .catch(err => {
+        console.error('Error carrito:', err);
+        document.getElementById("carrito").innerHTML = '<p style="color:red;">Error al cargar carrito</p>';
+    });
+}
+
+function eliminarDelCarrito(index) {
+    // Esta función requeriría backend adicional para funcionar correctamente
+    alert("Función de eliminar en desarrollo");
+}
+
+function finalizarCompra() {
+    fetch(`${PUBLIC_API}/finalizar`, {
+        method: "POST"
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) {
+            alert("❌ " + data.error);
+        } else {
+            alert("✅ " + data.mensaje + "\nCompra #" + data.compra_id);
+            cargarCarrito();
+        }
+    })
+    .catch(err => {
+        console.error('Error finalizar:', err);
+        alert("❌ Error al finalizar compra");
+    });
+}
+
+// Inicializar al cargar página
+window.addEventListener('load', function() {
+    console.log('Página cargada, inicializando carrito y productos');
+    cargarProductos();
+    cargarCarrito();
+});
+</script>
+
+</body>
+</html>
