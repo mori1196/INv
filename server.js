@@ -508,5 +508,3 @@ app.post('/finalizar/:usuario_id', async (req, res) => {
         res.status(500).json({ error: 'Error al guardar compra' });
     }
 });
-
-/* =======================
